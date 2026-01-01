@@ -213,7 +213,6 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
-        val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
         val compiledRegex = Pattern.compile(regex)
         api.proxy().history { it.contains(compiledRegex) }.asSequence()
             .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
