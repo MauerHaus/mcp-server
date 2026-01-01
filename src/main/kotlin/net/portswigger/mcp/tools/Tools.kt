@@ -42,8 +42,24 @@ private fun truncateIfNeeded(serialized: String): String {
     }
 }
 
+// Global redaction manager instance
+private var globalRedactionManager: RedactionManager? = null
+
+/**
+ * Shuts down the global redaction manager if it exists.
+ * Should be called when the server is stopped or the extension is unloaded.
+ */
+fun shutdownRedactionManager() {
+    globalRedactionManager?.shutdown()
+    globalRedactionManager = null
+}
+
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
-    val redactionManager = RedactionManager()
+    // Initialize or reuse the global redaction manager
+    if (globalRedactionManager == null) {
+        globalRedactionManager = RedactionManager()
+    }
+    val redactionManager = globalRedactionManager!!
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {

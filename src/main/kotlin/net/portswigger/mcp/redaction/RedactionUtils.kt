@@ -180,32 +180,34 @@ object RedactionUtils {
         var result = text
 
         // Redact JWTs
-        var jwtMatcher = JWT_PATTERN.matcher(result)
-        val jwtMatches = mutableListOf<Pair<String, String>>()
+        val jwtMatcher = JWT_PATTERN.matcher(result)
+        val jwtBuffer = StringBuffer()
         while (jwtMatcher.find()) {
             val token = jwtMatcher.group()
-            jwtMatches.add(token to context.addRedaction(token))
+            val placeholder = context.addRedaction(token)
+            jwtMatcher.appendReplacement(jwtBuffer, placeholder)
         }
-        jwtMatches.forEach { (original, placeholder) ->
-            result = result.replace(original, placeholder)
-        }
+        jwtMatcher.appendTail(jwtBuffer)
+        result = jwtBuffer.toString()
 
-        // Redact other long tokens (but not JWTs we already redacted)
-        var tokenMatcher = TOKEN_PATTERN.matcher(result)
-        val tokenMatches = mutableListOf<Pair<String, String>>()
+        // Redact other long tokens (but not JWTs we already redacted or existing placeholders)
+        val tokenMatcher = TOKEN_PATTERN.matcher(result)
+        val tokenBuffer = StringBuffer()
         while (tokenMatcher.find()) {
             val token = tokenMatcher.group()
             // Skip if it's already a placeholder
             if (!token.startsWith("REDACTED_")) {
                 // Only redact if it looks like a random token (has mix of chars/numbers)
                 if (looksLikeToken(token)) {
-                    tokenMatches.add(token to context.addRedaction(token))
+                    val placeholder = context.addRedaction(token)
+                    tokenMatcher.appendReplacement(tokenBuffer, placeholder)
+                    continue
                 }
             }
+            tokenMatcher.appendReplacement(tokenBuffer, token)
         }
-        tokenMatches.forEach { (original, placeholder) ->
-            result = result.replace(original, placeholder)
-        }
+        tokenMatcher.appendTail(tokenBuffer)
+        result = tokenBuffer.toString()
 
         return result
     }
@@ -224,7 +226,7 @@ object RedactionUtils {
         // Exclude common patterns that aren't tokens
         val isLikelyNotToken = value.all { it.isLetter() } || // All letters (words)
                 value.all { it.isDigit() } || // All digits (numbers)
-                value.count { it == '=' } > value.length / 3 // Too many '=' chars (base64 padding)
+                value.count { it == '=' } > 2 // Too many '=' chars (more than base64 padding)
 
         return hasLetter && hasDigitOrSpecial && !isLikelyNotToken
     }

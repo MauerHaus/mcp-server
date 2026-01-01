@@ -118,6 +118,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
             try {
                 server?.stop(1000, 5000)
                 server = null
+                net.portswigger.mcp.tools.shutdownRedactionManager()
                 api.logging().logToOutput("Stopped MCP server")
                 callback(ServerState.Stopped)
             } catch (e: Exception) {
@@ -130,6 +131,7 @@ class KtorServerManager(private val api: MontoyaApi) : ServerManager {
     override fun shutdown() {
         server?.stop(1000, 5000)
         server = null
+        net.portswigger.mcp.tools.shutdownRedactionManager()
 
         executor.shutdown()
         executor.awaitTermination(10, TimeUnit.SECONDS)
