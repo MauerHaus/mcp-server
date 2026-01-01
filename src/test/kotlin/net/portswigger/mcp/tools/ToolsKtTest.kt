@@ -56,6 +56,7 @@ class ToolsKtTest {
             every { getBoolean("requireHistoryAccessApproval") } returns false
             every { getBoolean("_alwaysAllowHttpHistory") } returns false
             every { getBoolean("_alwaysAllowWebSocketHistory") } returns false
+            every { getBoolean("redactHistory") } returns false
             every { getString("host") } returns "127.0.0.1"
             every { getString("autoApproveTargets") } returns ""
             every { getInteger("port") } returns testPort
@@ -700,17 +701,17 @@ class ToolsKtTest {
             
             mockkStatic("net.portswigger.mcp.schema.SerializationKt")
             
-            every { proxyHistory[0].toSerializableForm() } returns HttpRequestResponse(
+            every { proxyHistory[0].toSerializableForm(any()) } returns HttpRequestResponse(
                 request = "GET /item1 HTTP/1.1",
                 response = "HTTP/1.1 200 OK",
                 notes = "Item 1 notes"
             )
-            every { proxyHistory[1].toSerializableForm() } returns HttpRequestResponse(
+            every { proxyHistory[1].toSerializableForm(any()) } returns HttpRequestResponse(
                 request = "GET /item2 HTTP/1.1",
                 response = "HTTP/1.1 200 OK",
                 notes = "Item 2 notes"
             )
-            every { proxyHistory[2].toSerializableForm() } returns HttpRequestResponse(
+            every { proxyHistory[2].toSerializableForm(any()) } returns HttpRequestResponse(
                 request = "GET /item3 HTTP/1.1",
                 response = "HTTP/1.1 200 OK",
                 notes = "Item 3 notes"

@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.portswigger.mcp.config.McpConfig
+import net.portswigger.mcp.redaction.RedactionManager
 import net.portswigger.mcp.schema.toSerializableForm
 import net.portswigger.mcp.security.HistoryAccessSecurity
 import net.portswigger.mcp.security.HistoryAccessType
@@ -41,7 +42,24 @@ private fun truncateIfNeeded(serialized: String): String {
     }
 }
 
+// Global redaction manager instance
+private var globalRedactionManager: RedactionManager? = null
+
+/**
+ * Shuts down the global redaction manager if it exists.
+ * Should be called when the server is stopped or the extension is unloaded.
+ */
+fun shutdownRedactionManager() {
+    globalRedactionManager?.shutdown()
+    globalRedactionManager = null
+}
+
 fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
+    // Initialize or reuse the global redaction manager
+    if (globalRedactionManager == null) {
+        globalRedactionManager = RedactionManager()
+    }
+    val redactionManager = globalRedactionManager!!
 
     mcpTool<SendHttp1Request>("Issues an HTTP/1.1 request and returns the response.") {
         val allowed = runBlocking {
@@ -185,7 +203,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
 
     if (api.burpSuite().version().edition() == BurpSuiteEdition.PROFESSIONAL) {
         mcpPaginatedTool<GetScannerIssues>("Displays information about issues identified by the scanner") {
-            api.siteMap().issues().asSequence().map { Json.encodeToString(it.toSerializableForm()) }
+            val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
+            api.siteMap().issues().asSequence().map { Json.encodeToString(it.toSerializableForm(redactionContext)) }
         }
     }
 
@@ -197,7 +216,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
-        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+        val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
+        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
@@ -208,9 +228,10 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("HTTP history access denied by Burp Suite")
         }
 
+        val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
         val compiledRegex = Pattern.compile(regex)
         api.proxy().history { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
@@ -221,8 +242,9 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
         }
 
+        val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
         api.proxy().webSocketHistory().asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistoryRegex>("Displays items matching a specified regex within the proxy WebSocket history") {
@@ -233,9 +255,11 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             return@mcpPaginatedTool sequenceOf("WebSocket history access denied by Burp Suite")
         }
 
+        val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
+
         val compiledRegex = Pattern.compile(regex)
         api.proxy().webSocketHistory { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm())) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
     }
 
     mcpTool<SetTaskExecutionEngineState>("Sets the state of Burp's task execution engine (paused or unpaused)") {
@@ -268,6 +292,106 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         editor.text = text
 
         "Editor text has been set"
+    }
+
+    // Redacted send tools - these accept redacted requests with placeholders
+    mcpTool<SendHttp1RequestRedacted>("Issues an HTTP/1.1 request after rehydrating placeholders from the redaction context. Returns only status, no secrets.") {
+        val context = redactionManager.getContext(contextId)
+            ?: return@mcpTool "Error: Invalid or expired context_id. The redaction context may have expired."
+
+        val rehydratedContent = context.rehydrate(content)
+
+        val allowed = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, rehydratedContent, api)
+        }
+        if (!allowed) {
+            api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
+            return@mcpTool "Send HTTP request denied by Burp Suite"
+        }
+
+        api.logging().logToOutput("MCP HTTP/1.1 redacted request: $targetHostname:$targetPort")
+
+        val fixedContent = rehydratedContent.replace("\r", "").replace("\n", "\r\n")
+        val request = HttpRequest.httpRequest(toMontoyaService(), fixedContent)
+        val response = api.http().sendRequest(request)
+
+        if (response != null) {
+            "Request sent successfully. Status: ${response.statusCode()}"
+        } else {
+            "Request sent but no response received."
+        }
+    }
+
+    mcpTool<SendHttp2RequestRedacted>("Issues an HTTP/2 request after rehydrating placeholders from the redaction context. Returns only status, no secrets.") {
+        val context = redactionManager.getContext(contextId)
+            ?: return@mcpTool "Error: Invalid or expired context_id. The redaction context may have expired."
+
+        val rehydratedPseudoHeaders = pseudoHeaders.mapValues { (_, value) -> context.rehydrate(value) }
+        val rehydratedHeaders = headers.mapValues { (_, value) -> context.rehydrate(value) }
+        val rehydratedBody = context.rehydrate(requestBody)
+
+        val http2RequestDisplay = buildString {
+            rehydratedPseudoHeaders.forEach { (key, value) ->
+                val headerName = if (key.startsWith(":")) key else ":$key"
+                appendLine("$headerName: $value")
+            }
+            rehydratedHeaders.forEach { (key, value) ->
+                appendLine("$key: $value")
+            }
+            if (rehydratedBody.isNotBlank()) {
+                appendLine()
+                append(rehydratedBody)
+            }
+        }
+
+        val allowed = runBlocking {
+            HttpRequestSecurity.checkHttpRequestPermission(targetHostname, targetPort, config, http2RequestDisplay, api)
+        }
+        if (!allowed) {
+            api.logging().logToOutput("MCP HTTP request denied: $targetHostname:$targetPort")
+            return@mcpTool "Send HTTP request denied by Burp Suite"
+        }
+
+        api.logging().logToOutput("MCP HTTP/2 redacted request: $targetHostname:$targetPort")
+
+        val orderedPseudoHeaderNames = listOf(":scheme", ":method", ":path", ":authority")
+
+        val fixedPseudoHeaders = LinkedHashMap<String, String>().apply {
+            orderedPseudoHeaderNames.forEach { name ->
+                val value = rehydratedPseudoHeaders[name.removePrefix(":")] ?: rehydratedPseudoHeaders[name]
+                if (value != null) {
+                    put(name, value)
+                }
+            }
+
+            rehydratedPseudoHeaders.forEach { (key, value) ->
+                val properKey = if (key.startsWith(":")) key else ":$key"
+                if (!containsKey(properKey)) {
+                    put(properKey, value)
+                }
+            }
+        }
+
+        val headerList = (fixedPseudoHeaders + rehydratedHeaders).map { HttpHeader.httpHeader(it.key.lowercase(), it.value) }
+        val request = HttpRequest.http2Request(toMontoyaService(), headerList, rehydratedBody)
+        val response = api.http().sendRequest(request, HttpMode.HTTP_2)
+
+        if (response != null) {
+            "Request sent successfully. Status: ${response.statusCode()}"
+        } else {
+            "Request sent but no response received."
+        }
+    }
+
+    mcpTool<CreateRepeaterTabRedacted>("Creates a new Repeater tab with the specified HTTP request after rehydrating placeholders from the redaction context.") {
+        val context = redactionManager.getContext(contextId)
+            ?: return@mcpTool "Error: Invalid or expired context_id. The redaction context may have expired."
+
+        val rehydratedContent = context.rehydrate(content)
+        val request = HttpRequest.httpRequest(toMontoyaService(), rehydratedContent)
+        api.repeater().sendToRepeater(request, tabName)
+
+        "Repeater tab created successfully with name: ${tabName ?: "default"}"
     }
 }
 
@@ -375,3 +499,33 @@ data class GetProxyWebsocketHistory(override val count: Int, override val offset
 @Serializable
 data class GetProxyWebsocketHistoryRegex(val regex: String, override val count: Int, override val offset: Int) :
     Paginated
+
+@Serializable
+data class SendHttp1RequestRedacted(
+    val content: String,
+    val contextId: String,
+    override val targetHostname: String,
+    override val targetPort: Int,
+    override val usesHttps: Boolean
+) : HttpServiceParams
+
+@Serializable
+data class SendHttp2RequestRedacted(
+    val pseudoHeaders: Map<String, String>,
+    val headers: Map<String, String>,
+    val requestBody: String,
+    val contextId: String,
+    override val targetHostname: String,
+    override val targetPort: Int,
+    override val usesHttps: Boolean
+) : HttpServiceParams
+
+@Serializable
+data class CreateRepeaterTabRedacted(
+    val tabName: String?,
+    val content: String,
+    val contextId: String,
+    override val targetHostname: String,
+    override val targetPort: Int,
+    override val usesHttps: Boolean
+) : HttpServiceParams
