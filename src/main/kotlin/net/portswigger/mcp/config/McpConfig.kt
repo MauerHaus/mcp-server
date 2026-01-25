@@ -92,9 +92,10 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     }
 
     fun addCustomRedactionKeyword(keyword: String): Boolean {
+        val trimmedKeyword = keyword.trim()
         val currentKeywords = getCustomRedactionKeywordsList()
-        if (keyword.trim().isNotEmpty() && !currentKeywords.contains(keyword.trim())) {
-            val newKeywords = currentKeywords + keyword.trim()
+        if (trimmedKeyword.isNotEmpty() && !currentKeywords.contains(trimmedKeyword)) {
+            val newKeywords = currentKeywords + trimmedKeyword
             customRedactionKeywords = newKeywords.joinToString(",")
             return true
         }
@@ -102,8 +103,9 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     }
 
     fun removeCustomRedactionKeyword(keyword: String): Boolean {
+        val trimmedKeyword = keyword.trim()
         val currentKeywords = getCustomRedactionKeywordsList()
-        val newKeywords = currentKeywords.filter { it != keyword.trim() }
+        val newKeywords = currentKeywords.filter { it != trimmedKeyword }
         if (newKeywords.size != currentKeywords.size) {
             customRedactionKeywords = newKeywords.joinToString(",")
             return true
