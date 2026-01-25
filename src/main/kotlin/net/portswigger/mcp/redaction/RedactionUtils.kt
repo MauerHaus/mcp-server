@@ -121,6 +121,7 @@ object RedactionUtils {
         val absoluteFormPattern = Pattern.compile("^(\\w+)\\s+(https?://[^/]+)(/.*)\\s+(HTTP/\\S+)$")
         val matcher = absoluteFormPattern.matcher(line)
 
+        // First, redact absolute-form URI if present
         var result = line
         if (matcher.matches()) {
             val method = matcher.group(1)
@@ -131,7 +132,7 @@ object RedactionUtils {
             result = "$method $redactedHostPort$path $version"
         }
 
-        // Apply custom keyword redaction
+        // Then apply custom keyword redaction to the entire line
         return redactCustomKeywords(result, context, customKeywords)
     }
 
