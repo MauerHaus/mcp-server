@@ -16,6 +16,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     var requireHttpRequestApproval by storage.boolean(true)
     var requireHistoryAccessApproval by storage.boolean(true)
     var redactHistory by storage.boolean(true)
+    var customRedactionKeywords by storage.stringList("")
 
     private var _alwaysAllowHttpHistory by storage.boolean(false)
     var alwaysAllowHttpHistory: Boolean
@@ -80,6 +81,38 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
 
     fun clearAutoApproveTargets() {
         autoApproveTargets = ""
+    }
+
+    fun getCustomRedactionKeywordsList(): List<String> {
+        return if (customRedactionKeywords.isBlank()) {
+            emptyList()
+        } else {
+            customRedactionKeywords.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        }
+    }
+
+    fun addCustomRedactionKeyword(keyword: String): Boolean {
+        val currentKeywords = getCustomRedactionKeywordsList()
+        if (keyword.trim().isNotEmpty() && !currentKeywords.contains(keyword.trim())) {
+            val newKeywords = currentKeywords + keyword.trim()
+            customRedactionKeywords = newKeywords.joinToString(",")
+            return true
+        }
+        return false
+    }
+
+    fun removeCustomRedactionKeyword(keyword: String): Boolean {
+        val currentKeywords = getCustomRedactionKeywordsList()
+        val newKeywords = currentKeywords.filter { it != keyword.trim() }
+        if (newKeywords.size != currentKeywords.size) {
+            customRedactionKeywords = newKeywords.joinToString(",")
+            return true
+        }
+        return false
+    }
+
+    fun clearCustomRedactionKeywords() {
+        customRedactionKeywords = ""
     }
 
     fun addTargetsChangeListener(listener: () -> Unit): ListenerHandle {

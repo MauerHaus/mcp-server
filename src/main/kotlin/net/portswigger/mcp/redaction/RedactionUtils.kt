@@ -29,7 +29,7 @@ object RedactionUtils {
     /**
      * Redacts sensitive information from an HTTP request string.
      */
-    fun redactHttpRequest(request: String, context: RedactionContext): String {
+    fun redactHttpRequest(request: String, context: RedactionContext, customKeywords: List<String> = emptyList()): String {
         val lines = request.split("\r\n", "\n")
         if (lines.isEmpty()) return request
 
@@ -43,14 +43,14 @@ object RedactionUtils {
             if (!inBody) {
                 if (i == 0) {
                     // Request line: redact absolute-form URIs
-                    result.appendLine(redactRequestLine(line, context))
+                    result.appendLine(redactRequestLine(line, context, customKeywords))
                 } else if (line.isBlank()) {
                     // Empty line marks start of body
                     result.appendLine(line)
                     inBody = true
                 } else {
                     // Header line
-                    result.appendLine(redactRequestHeader(line, context))
+                    result.appendLine(redactRequestHeader(line, context, customKeywords))
                 }
             } else {
                 bodyLines.add(line)
@@ -60,7 +60,7 @@ object RedactionUtils {
         // Redact body if present
         if (bodyLines.isNotEmpty()) {
             val body = bodyLines.joinToString("\n")
-            result.append(redactTokensInText(body, context))
+            result.append(redactTokensInText(body, context, customKeywords))
         }
 
         return result.toString()
@@ -69,7 +69,7 @@ object RedactionUtils {
     /**
      * Redacts sensitive information from an HTTP response string.
      */
-    fun redactHttpResponse(response: String, context: RedactionContext): String {
+    fun redactHttpResponse(response: String, context: RedactionContext, customKeywords: List<String> = emptyList()): String {
         val lines = response.split("\r\n", "\n")
         if (lines.isEmpty()) return response
 
@@ -90,7 +90,7 @@ object RedactionUtils {
                     inBody = true
                 } else {
                     // Header line
-                    result.appendLine(redactResponseHeader(line, context))
+                    result.appendLine(redactResponseHeader(line, context, customKeywords))
                 }
             } else {
                 bodyLines.add(line)
@@ -100,7 +100,7 @@ object RedactionUtils {
         // Redact body if present
         if (bodyLines.isNotEmpty()) {
             val body = bodyLines.joinToString("\n")
-            result.append(redactTokensInText(body, context))
+            result.append(redactTokensInText(body, context, customKeywords))
         }
 
         return result.toString()
@@ -109,34 +109,36 @@ object RedactionUtils {
     /**
      * Redacts sensitive information from WebSocket payload.
      */
-    fun redactWebSocketPayload(payload: String, context: RedactionContext): String {
-        return redactTokensInText(payload, context)
+    fun redactWebSocketPayload(payload: String, context: RedactionContext, customKeywords: List<String> = emptyList()): String {
+        return redactTokensInText(payload, context, customKeywords)
     }
 
     /**
      * Redacts the request line, specifically absolute-form URIs.
      */
-    private fun redactRequestLine(line: String, context: RedactionContext): String {
+    private fun redactRequestLine(line: String, context: RedactionContext, customKeywords: List<String>): String {
         // Match: METHOD http://hostname:port/path HTTP/VERSION
         val absoluteFormPattern = Pattern.compile("^(\\w+)\\s+(https?://[^/]+)(/.*)\\s+(HTTP/\\S+)$")
         val matcher = absoluteFormPattern.matcher(line)
 
+        var result = line
         if (matcher.matches()) {
             val method = matcher.group(1)
             val hostPort = matcher.group(2)
             val path = matcher.group(3)
             val version = matcher.group(4)
             val redactedHostPort = context.addRedaction(hostPort)
-            return "$method $redactedHostPort$path $version"
+            result = "$method $redactedHostPort$path $version"
         }
 
-        return line
+        // Apply custom keyword redaction
+        return redactCustomKeywords(result, context, customKeywords)
     }
 
     /**
      * Redacts sensitive request headers.
      */
-    private fun redactRequestHeader(line: String, context: RedactionContext): String {
+    private fun redactRequestHeader(line: String, context: RedactionContext, customKeywords: List<String>): String {
         val colonIndex = line.indexOf(':')
         if (colonIndex == -1) return line
 
@@ -149,7 +151,7 @@ object RedactionUtils {
             "authorization" -> context.addRedaction(headerValue)
             "proxy-authorization" -> context.addRedaction(headerValue)
             in API_KEY_HEADERS -> context.addRedaction(headerValue)
-            else -> redactTokensInText(headerValue, context)
+            else -> redactTokensInText(headerValue, context, customKeywords)
         }
 
         return "${line.substring(0, colonIndex)}: $redactedValue"
@@ -158,7 +160,7 @@ object RedactionUtils {
     /**
      * Redacts sensitive response headers.
      */
-    private fun redactResponseHeader(line: String, context: RedactionContext): String {
+    private fun redactResponseHeader(line: String, context: RedactionContext, customKeywords: List<String>): String {
         val colonIndex = line.indexOf(':')
         if (colonIndex == -1) return line
 
@@ -167,7 +169,7 @@ object RedactionUtils {
 
         val redactedValue = when (headerName) {
             "set-cookie" -> context.addRedaction(headerValue)
-            else -> redactTokensInText(headerValue, context)
+            else -> redactTokensInText(headerValue, context, customKeywords)
         }
 
         return "${line.substring(0, colonIndex)}: $redactedValue"
@@ -176,7 +178,7 @@ object RedactionUtils {
     /**
      * Redacts JWT and token-like strings in text.
      */
-    private fun redactTokensInText(text: String, context: RedactionContext): String {
+    private fun redactTokensInText(text: String, context: RedactionContext, customKeywords: List<String>): String {
         var result = text
 
         // Redact JWTs
@@ -209,6 +211,36 @@ object RedactionUtils {
         tokenMatcher.appendTail(tokenBuffer)
         result = tokenBuffer.toString()
 
+        // Apply custom keyword redaction
+        result = redactCustomKeywords(result, context, customKeywords)
+
+        return result
+    }
+
+    /**
+     * Redacts custom keywords in text.
+     */
+    private fun redactCustomKeywords(text: String, context: RedactionContext, customKeywords: List<String>): String {
+        if (customKeywords.isEmpty()) {
+            return text
+        }
+
+        var result = text
+        for (keyword in customKeywords) {
+            if (keyword.isNotEmpty()) {
+                // Use case-insensitive matching but preserve original case in context
+                val pattern = Pattern.compile(Pattern.quote(keyword), Pattern.CASE_INSENSITIVE)
+                val matcher = pattern.matcher(result)
+                val buffer = StringBuffer()
+                while (matcher.find()) {
+                    val matched = matcher.group()
+                    val placeholder = context.addRedaction(matched)
+                    matcher.appendReplacement(buffer, placeholder)
+                }
+                matcher.appendTail(buffer)
+                result = buffer.toString()
+            }
+        }
         return result
     }
 

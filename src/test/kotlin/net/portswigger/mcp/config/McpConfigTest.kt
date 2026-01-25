@@ -249,4 +249,133 @@ class McpConfigTest {
         assertTrue(config.requireHttpRequestApproval)
         verify { persistedObject.setBoolean("requireHttpRequestApproval", true) }
     }
+
+    @Test
+    fun `addCustomRedactionKeyword should add new keyword`() {
+        val result = config.addCustomRedactionKeyword("int.aws")
+
+        assertTrue(result)
+        assertEquals("int.aws", config.customRedactionKeywords)
+        verify { persistedObject.setString("customRedactionKeywords", "int.aws") }
+    }
+
+    @Test
+    fun `addCustomRedactionKeyword should not add duplicate keyword`() {
+        config.addCustomRedactionKeyword("int.aws")
+        val result = config.addCustomRedactionKeyword("int.aws")
+
+        assertFalse(result)
+        assertEquals("int.aws", config.customRedactionKeywords)
+    }
+
+    @Test
+    fun `addCustomRedactionKeyword should trim whitespace`() {
+        val result = config.addCustomRedactionKeyword("  int.aws  ")
+
+        assertTrue(result)
+        assertEquals("int.aws", config.customRedactionKeywords)
+    }
+
+    @Test
+    fun `addCustomRedactionKeyword should not add empty keyword`() {
+        val result = config.addCustomRedactionKeyword("   ")
+
+        assertFalse(result)
+        assertEquals("", config.customRedactionKeywords)
+    }
+
+    @Test
+    fun `addCustomRedactionKeyword should handle multiple keywords`() {
+        config.addCustomRedactionKeyword("int.aws")
+        config.addCustomRedactionKeyword("staging.internal")
+
+        assertEquals("int.aws,staging.internal", config.customRedactionKeywords)
+        assertEquals(listOf("int.aws", "staging.internal"), config.getCustomRedactionKeywordsList())
+    }
+
+    @Test
+    fun `removeCustomRedactionKeyword should remove existing keyword`() {
+        config.addCustomRedactionKeyword("int.aws")
+        config.addCustomRedactionKeyword("staging.internal")
+
+        val result = config.removeCustomRedactionKeyword("int.aws")
+
+        assertTrue(result)
+        assertEquals("staging.internal", config.customRedactionKeywords)
+        assertEquals(listOf("staging.internal"), config.getCustomRedactionKeywordsList())
+    }
+
+    @Test
+    fun `removeCustomRedactionKeyword should return false for non-existing keyword`() {
+        config.addCustomRedactionKeyword("int.aws")
+
+        val result = config.removeCustomRedactionKeyword("notfound")
+
+        assertFalse(result)
+        assertEquals("int.aws", config.customRedactionKeywords)
+    }
+
+    @Test
+    fun `clearCustomRedactionKeywords should remove all keywords`() {
+        config.addCustomRedactionKeyword("int.aws")
+        config.addCustomRedactionKeyword("staging.internal")
+
+        config.clearCustomRedactionKeywords()
+
+        assertEquals("", config.customRedactionKeywords)
+        assertEquals(emptyList<String>(), config.getCustomRedactionKeywordsList())
+    }
+
+    @Test
+    fun `getCustomRedactionKeywordsList should handle empty config`() {
+        assertEquals(emptyList<String>(), config.getCustomRedactionKeywordsList())
+    }
+
+    @Test
+    fun `getCustomRedactionKeywordsList should parse comma-separated values`() {
+        val storage = mutableMapOf<String, Any>("customRedactionKeywords" to "int.aws,staging.internal,prod.internal")
+        persistedObject = mockk<PersistedObject>().apply {
+            every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
+            every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
+            every { getInteger(any()) } answers { storage[firstArg()] as? Int ?: 0 }
+            every { setBoolean(any(), any()) } answers {
+                storage[firstArg()] = secondArg<Boolean>()
+            }
+            every { setString(any(), any()) } answers {
+                storage[firstArg()] = secondArg<String>()
+            }
+            every { setInteger(any(), any()) } answers {
+                storage[firstArg()] = secondArg<Int>()
+            }
+        }
+        config = McpConfig(persistedObject, mockLogging)
+
+        assertEquals(
+            listOf("int.aws", "staging.internal", "prod.internal"), config.getCustomRedactionKeywordsList()
+        )
+    }
+
+    @Test
+    fun `getCustomRedactionKeywordsList should handle malformed input`() {
+        val storage = mutableMapOf<String, Any>("customRedactionKeywords" to "int.aws,,  ,staging.internal")
+        persistedObject = mockk<PersistedObject>().apply {
+            every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
+            every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
+            every { getInteger(any()) } answers { storage[firstArg()] as? Int ?: 0 }
+            every { setBoolean(any(), any()) } answers {
+                storage[firstArg()] = secondArg<Boolean>()
+            }
+            every { setString(any(), any()) } answers {
+                storage[firstArg()] = secondArg<String>()
+            }
+            every { setInteger(any(), any()) } answers {
+                storage[firstArg()] = secondArg<Int>()
+            }
+        }
+        config = McpConfig(persistedObject, mockLogging)
+
+        assertEquals(
+            listOf("int.aws", "staging.internal"), config.getCustomRedactionKeywordsList()
+        )
+    }
 }

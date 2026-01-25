@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 import net.portswigger.mcp.redaction.RedactionContext
 import net.portswigger.mcp.redaction.RedactionUtils
 
-fun AuditIssue.toSerializableForm(redactionContext: RedactionContext? = null): IssueDetails {
+fun AuditIssue.toSerializableForm(redactionContext: RedactionContext? = null, customKeywords: List<String> = emptyList()): IssueDetails {
     return IssueDetails(
         name = name(),
         detail = detail(),
@@ -21,7 +21,7 @@ fun AuditIssue.toSerializableForm(redactionContext: RedactionContext? = null): I
         baseUrl = baseUrl(),
         severity = AuditIssueSeverity.valueOf(severity().name),
         confidence = AuditIssueConfidence.valueOf(confidence().name),
-        requestResponses = requestResponses().map { it.toSerializableForm(redactionContext) },
+        requestResponses = requestResponses().map { it.toSerializableForm(redactionContext, customKeywords) },
         collaboratorInteractions = collaboratorInteractions().map {
             Interaction(
                 interactionId = it.id().toString(),
@@ -38,18 +38,18 @@ fun AuditIssue.toSerializableForm(redactionContext: RedactionContext? = null): I
     )
 }
 
-fun burp.api.montoya.http.message.HttpRequestResponse.toSerializableForm(redactionContext: RedactionContext? = null): HttpRequestResponse {
+fun burp.api.montoya.http.message.HttpRequestResponse.toSerializableForm(redactionContext: RedactionContext? = null, customKeywords: List<String> = emptyList()): HttpRequestResponse {
     val rawRequest = request()?.toString() ?: "<no request>"
     val rawResponse = response()?.toString() ?: "<no response>"
     
     val processedRequest = if (redactionContext != null && rawRequest != "<no request>") {
-        RedactionUtils.redactHttpRequest(rawRequest, redactionContext)
+        RedactionUtils.redactHttpRequest(rawRequest, redactionContext, customKeywords)
     } else {
         rawRequest
     }
     
     val processedResponse = if (redactionContext != null && rawResponse != "<no response>") {
-        RedactionUtils.redactHttpResponse(rawResponse, redactionContext)
+        RedactionUtils.redactHttpResponse(rawResponse, redactionContext, customKeywords)
     } else {
         rawResponse
     }
@@ -62,18 +62,18 @@ fun burp.api.montoya.http.message.HttpRequestResponse.toSerializableForm(redacti
     )
 }
 
-fun ProxyHttpRequestResponse.toSerializableForm(redactionContext: RedactionContext? = null): HttpRequestResponse {
+fun ProxyHttpRequestResponse.toSerializableForm(redactionContext: RedactionContext? = null, customKeywords: List<String> = emptyList()): HttpRequestResponse {
     val rawRequest = request()?.toString() ?: "<no request>"
     val rawResponse = response()?.toString() ?: "<no response>"
     
     val processedRequest = if (redactionContext != null && rawRequest != "<no request>") {
-        RedactionUtils.redactHttpRequest(rawRequest, redactionContext)
+        RedactionUtils.redactHttpRequest(rawRequest, redactionContext, customKeywords)
     } else {
         rawRequest
     }
     
     val processedResponse = if (redactionContext != null && rawResponse != "<no response>") {
-        RedactionUtils.redactHttpResponse(rawResponse, redactionContext)
+        RedactionUtils.redactHttpResponse(rawResponse, redactionContext, customKeywords)
     } else {
         rawResponse
     }
@@ -86,11 +86,11 @@ fun ProxyHttpRequestResponse.toSerializableForm(redactionContext: RedactionConte
     )
 }
 
-fun ProxyWebSocketMessage.toSerializableForm(redactionContext: RedactionContext? = null): WebSocketMessage {
+fun ProxyWebSocketMessage.toSerializableForm(redactionContext: RedactionContext? = null, customKeywords: List<String> = emptyList()): WebSocketMessage {
     val rawPayload = payload()?.toString() ?: "<no payload>"
     
     val processedPayload = if (redactionContext != null && rawPayload != "<no payload>") {
-        RedactionUtils.redactWebSocketPayload(rawPayload, redactionContext)
+        RedactionUtils.redactWebSocketPayload(rawPayload, redactionContext, customKeywords)
     } else {
         rawPayload
     }

@@ -48,6 +48,7 @@ class RedactedToolsIntegrationTest {
             every { getBoolean("redactHistory") } returns true // Enable redaction for these tests
             every { getString("host") } returns "127.0.0.1"
             every { getString("autoApproveTargets") } returns ""
+            every { getString("customRedactionKeywords") } returns ""
             every { getInteger("port") } returns testPort
             every { setBoolean(any(), any()) } returns Unit
             every { setString(any(), any()) } returns Unit
@@ -135,7 +136,7 @@ class RedactedToolsIntegrationTest {
 
         mockkStatic("net.portswigger.mcp.schema.SerializationKt")
 
-        every { proxyHistory[0].toSerializableForm(any()) } returns HttpRequestResponse(
+        every { proxyHistory[0].toSerializableForm(any(), any<List<String>>()) } returns HttpRequestResponse(
             request = "GET /test HTTP/1.1\nHost: REDACTED_1\n\n",
             response = "HTTP/1.1 200 OK\n\nBody",
             notes = "Test notes",
@@ -178,7 +179,7 @@ class RedactedToolsIntegrationTest {
             every { proxy.history() } returns proxyHistory
 
             mockkStatic("net.portswigger.mcp.schema.SerializationKt")
-            every { proxyHistory[0].toSerializableForm(any()) } returns HttpRequestResponse(
+            every { proxyHistory[0].toSerializableForm(any(), any<List<String>>()) } returns HttpRequestResponse(
                 request = "GET /test HTTP/1.1\nHost: REDACTED_1\n\n",
                 response = "HTTP/1.1 200 OK\n\n",
                 notes = null,

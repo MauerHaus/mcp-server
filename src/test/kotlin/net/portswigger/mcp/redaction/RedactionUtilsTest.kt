@@ -216,4 +216,192 @@ class RedactionUtilsTest {
         assertFalse(redacted.contains("supersecretcookie123"))
         assertTrue(redacted.contains("REDACTED_"))
     }
+
+    @Test
+    fun `custom keyword redaction should redact in request body`() {
+        val request = """
+            POST /api HTTP/1.1
+            Host: example.com
+            Content-Type: application/json
+            
+            {"server":"int.aws.internal","data":"test"}
+        """.trimIndent()
+
+        val customKeywords = listOf("int.aws")
+        val redacted = RedactionUtils.redactHttpRequest(request, context, customKeywords)
+
+        assertFalse(redacted.contains("int.aws"))
+        assertTrue(redacted.contains("REDACTED_"))
+        assertTrue(redacted.contains("\"server\":\"REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should redact in response body`() {
+        val response = """
+            HTTP/1.1 200 OK
+            Content-Type: text/html
+            
+            <html><body>Connect to int.aws for more info</body></html>
+        """.trimIndent()
+
+        val customKeywords = listOf("int.aws")
+        val redacted = RedactionUtils.redactHttpResponse(response, context, customKeywords)
+
+        assertFalse(redacted.contains("int.aws"))
+        assertTrue(redacted.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should redact in headers`() {
+        val request = """
+            GET /path HTTP/1.1
+            Host: example.com
+            X-Custom-Header: int.aws.internal
+            
+        """.trimIndent()
+
+        val customKeywords = listOf("int.aws")
+        val redacted = RedactionUtils.redactHttpRequest(request, context, customKeywords)
+
+        assertFalse(redacted.contains("int.aws"))
+        assertTrue(redacted.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should be case insensitive`() {
+        val request = """
+            POST /api HTTP/1.1
+            Host: example.com
+            
+            {"server":"INT.AWS.internal","data":"Int.Aws"}
+        """.trimIndent()
+
+        val customKeywords = listOf("int.aws")
+        val redacted = RedactionUtils.redactHttpRequest(request, context, customKeywords)
+
+        assertFalse(redacted.contains("INT.AWS"))
+        assertFalse(redacted.contains("Int.Aws"))
+        assertTrue(redacted.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should support multiple keywords`() {
+        val request = """
+            POST /api HTTP/1.1
+            Host: example.com
+            
+            {"server":"int.aws","backup":"staging.internal"}
+        """.trimIndent()
+
+        val customKeywords = listOf("int.aws", "staging.internal")
+        val redacted = RedactionUtils.redactHttpRequest(request, context, customKeywords)
+
+        assertFalse(redacted.contains("int.aws"))
+        assertFalse(redacted.contains("staging.internal"))
+        assertTrue(redacted.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should work in websocket payload`() {
+        val payload = """{"server":"int.aws","action":"connect"}"""
+
+        val customKeywords = listOf("int.aws")
+        val redacted = RedactionUtils.redactWebSocketPayload(payload, context, customKeywords)
+
+        assertFalse(redacted.contains("int.aws"))
+        assertTrue(redacted.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should preserve rehydration`() {
+        val request = """
+            POST /api HTTP/1.1
+            Host: example.com
+            
+            {"server":"int.aws","data":"test"}
+        """.trimIndent()
+
+        val customKeywords = listOf("int.aws")
+        val redacted = RedactionUtils.redactHttpRequest(request, context, customKeywords)
+        val rehydrated = context.rehydrate(redacted)
+
+        // After rehydration, should contain the original values
+        assertTrue(rehydrated.contains("int.aws"))
+        assertFalse(rehydrated.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `should work without custom keywords - backward compatibility`() {
+        val request = """
+            GET /path HTTP/1.1
+            Host: example.com
+            Cookie: session=abc123
+            
+        """.trimIndent()
+
+        // Call with empty list (default)
+        val redacted = RedactionUtils.redactHttpRequest(request, context, emptyList())
+
+        // Standard redaction should still work
+        assertFalse(redacted.contains("example.com"))
+        assertFalse(redacted.contains("session=abc123"))
+        assertTrue(redacted.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should not affect standard redaction`() {
+        val request = """
+            POST /api HTTP/1.1
+            Host: example.com
+            Cookie: session=abc123
+            Authorization: Bearer token123
+            
+            {"server":"int.aws","token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"}
+        """.trimIndent()
+
+        val customKeywords = listOf("int.aws")
+        val redacted = RedactionUtils.redactHttpRequest(request, context, customKeywords)
+
+        // Both standard and custom redaction should work
+        assertFalse(redacted.contains("example.com")) // Host header
+        assertFalse(redacted.contains("session=abc123")) // Cookie
+        assertFalse(redacted.contains("Bearer token123")) // Authorization
+        assertFalse(redacted.contains("int.aws")) // Custom keyword
+        assertFalse(redacted.contains("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")) // JWT
+        assertTrue(redacted.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should handle special regex characters`() {
+        val request = """
+            POST /api HTTP/1.1
+            Host: example.com
+            
+            {"server":"test.internal","query":"a+b*c?d"}
+        """.trimIndent()
+
+        // Test with special regex characters
+        val customKeywords = listOf("test.internal", "a+b*c?d")
+        val redacted = RedactionUtils.redactHttpRequest(request, context, customKeywords)
+
+        assertFalse(redacted.contains("test.internal"))
+        assertFalse(redacted.contains("a+b*c?d"))
+        assertTrue(redacted.contains("REDACTED_"))
+    }
+
+    @Test
+    fun `custom keyword redaction should redact in request line`() {
+        val request = """
+            GET http://int.aws:8080/path HTTP/1.1
+            User-Agent: Test
+            
+        """.trimIndent()
+
+        val customKeywords = listOf("int.aws")
+        val redacted = RedactionUtils.redactHttpRequest(request, context, customKeywords)
+
+        // Should redact in absolute-form URI
+        assertFalse(redacted.contains("int.aws"))
+        assertTrue(redacted.contains("REDACTED_"))
+    }
 }

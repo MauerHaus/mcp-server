@@ -204,7 +204,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
     if (api.burpSuite().version().edition() == BurpSuiteEdition.PROFESSIONAL) {
         mcpPaginatedTool<GetScannerIssues>("Displays information about issues identified by the scanner") {
             val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
-            api.siteMap().issues().asSequence().map { Json.encodeToString(it.toSerializableForm(redactionContext)) }
+            val customKeywords = config.getCustomRedactionKeywordsList()
+            api.siteMap().issues().asSequence().map { Json.encodeToString(it.toSerializableForm(redactionContext, customKeywords)) }
         }
     }
 
@@ -217,7 +218,8 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
-        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
+        val customKeywords = config.getCustomRedactionKeywordsList()
+        api.proxy().history().asSequence().map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext, customKeywords))) }
     }
 
     mcpPaginatedTool<GetProxyHttpHistoryRegex>("Displays items matching a specified regex within the proxy HTTP history") {
@@ -229,9 +231,10 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
+        val customKeywords = config.getCustomRedactionKeywordsList()
         val compiledRegex = Pattern.compile(regex)
         api.proxy().history { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext, customKeywords))) }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistory>("Displays items within the proxy WebSocket history") {
@@ -243,8 +246,9 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
+        val customKeywords = config.getCustomRedactionKeywordsList()
         api.proxy().webSocketHistory().asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext, customKeywords))) }
     }
 
     mcpPaginatedTool<GetProxyWebsocketHistoryRegex>("Displays items matching a specified regex within the proxy WebSocket history") {
@@ -256,10 +260,11 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
         }
 
         val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
+        val customKeywords = config.getCustomRedactionKeywordsList()
 
         val compiledRegex = Pattern.compile(regex)
         api.proxy().webSocketHistory { it.contains(compiledRegex) }.asSequence()
-            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext))) }
+            .map { truncateIfNeeded(Json.encodeToString(it.toSerializableForm(redactionContext, customKeywords))) }
     }
 
     mcpTool<SetTaskExecutionEngineState>("Sets the state of Burp's task execution engine (paused or unpaused)") {
