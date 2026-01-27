@@ -256,7 +256,7 @@ class McpConfigTest {
 
         assertTrue(result)
         assertEquals("int.aws", config.customRedactionKeywords)
-        verify { persistedObject.setString("customRedactionKeywords", "int.aws") }
+        verify { persistedObject.setString("_customRedactionKeywords", "int.aws") }
     }
 
     @Test
@@ -333,7 +333,7 @@ class McpConfigTest {
 
     @Test
     fun `getCustomRedactionKeywordsList should parse comma-separated values`() {
-        val storage = mutableMapOf<String, Any>("customRedactionKeywords" to "int.aws,staging.internal,prod.internal")
+        val storage = mutableMapOf<String, Any>("_customRedactionKeywords" to "int.aws,staging.internal,prod.internal")
         persistedObject = mockk<PersistedObject>().apply {
             every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
             every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }
@@ -357,7 +357,7 @@ class McpConfigTest {
 
     @Test
     fun `getCustomRedactionKeywordsList should handle malformed input`() {
-        val storage = mutableMapOf<String, Any>("customRedactionKeywords" to "int.aws,,  ,staging.internal")
+        val storage = mutableMapOf<String, Any>("_customRedactionKeywords" to "int.aws,,  ,staging.internal")
         persistedObject = mockk<PersistedObject>().apply {
             every { getBoolean(any()) } answers { storage[firstArg()] as? Boolean ?: false }
             every { getString(any()) } answers { storage[firstArg()] as? String ?: "" }

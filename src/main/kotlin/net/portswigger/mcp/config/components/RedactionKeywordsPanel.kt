@@ -64,8 +64,7 @@ class RedactionKeywordsPanel(private val config: McpConfig) : JPanel() {
                 updateKeywordsList(listModel)
             }
         }
-        // Note: We don't have a specific listener for keywords changes, so we'll rely on manual updates
-        // If needed in the future, we can add a listener mechanism similar to targetsChangeListeners
+        listenerHandle = config.addRedactionKeywordsChangeListener(refreshListener!!)
 
         val scrollPane = createScrollPane(keywordsList)
         val tableContainer = createTableContainer(scrollPane)
