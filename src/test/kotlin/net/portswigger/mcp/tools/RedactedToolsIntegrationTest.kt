@@ -48,7 +48,7 @@ class RedactedToolsIntegrationTest {
             every { getBoolean("redactHistory") } returns true // Enable redaction for these tests
             every { getString("host") } returns "127.0.0.1"
             every { getString("autoApproveTargets") } returns ""
-            every { getString("customRedactionKeywords") } returns ""
+            every { getString("_customRedactionKeywords") } returns ""
             every { getInteger("port") } returns testPort
             every { setBoolean(any(), any()) } returns Unit
             every { setString(any(), any()) } returns Unit

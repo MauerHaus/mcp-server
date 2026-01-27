@@ -16,7 +16,18 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     var requireHttpRequestApproval by storage.boolean(true)
     var requireHistoryAccessApproval by storage.boolean(true)
     var redactHistory by storage.boolean(true)
-    var customRedactionKeywords by storage.stringList("")
+
+    private var _customRedactionKeywords by storage.stringList("")
+    private val redactionKeywordsChangeListeners = CopyOnWriteArrayList<ListenerRegistration>()
+
+    var customRedactionKeywords: String
+        get() = _customRedactionKeywords
+        set(value) {
+            if (_customRedactionKeywords != value) {
+                _customRedactionKeywords = value
+                notifyRedactionKeywordsChanged()
+            }
+        }
 
     private var _alwaysAllowHttpHistory by storage.boolean(false)
     var alwaysAllowHttpHistory: Boolean
@@ -161,6 +172,28 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
         }
     }
 
+    fun addRedactionKeywordsChangeListener(listener: () -> Unit): ListenerHandle {
+        val registration = ListenerRegistration(listener)
+        redactionKeywordsChangeListeners.add(registration)
+        return ListenerHandle { removeRedactionKeywordsChangeListener(registration) }
+    }
+
+    private fun removeRedactionKeywordsChangeListener(registration: ListenerRegistration) {
+        redactionKeywordsChangeListeners.remove(registration)
+    }
+
+    private fun notifyRedactionKeywordsChanged() {
+        cleanupStaleListeners(redactionKeywordsChangeListeners)
+        val listeners = redactionKeywordsChangeListeners.mapNotNull { it.listener.get() }
+        listeners.forEach { listener ->
+            try {
+                listener()
+            } catch (e: Exception) {
+                logging.logToError("Redaction keywords change listener failed: ${e.message}")
+            }
+        }
+    }
+
     private fun cleanupStaleListeners(listenerList: CopyOnWriteArrayList<ListenerRegistration>) {
         val staleListeners = listenerList.filter { it.listener.get() == null }
         listenerList.removeAll(staleListeners)
@@ -169,6 +202,7 @@ class McpConfig(storage: PersistedObject, private val logging: Logging) {
     fun cleanup() {
         targetsChangeListeners.clear()
         historyAccessChangeListeners.clear()
+        redactionKeywordsChangeListeners.clear()
     }
 }
 
