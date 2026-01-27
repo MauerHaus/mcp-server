@@ -145,9 +145,11 @@ class RedactionKeywordsPanel(private val config: McpConfig) : JPanel() {
                             rolloverIndex = newRolloverIndex
                             repaint()
                         }
-                    } catch (_: Exception) {
+                    } catch (e: Exception) {
+                        // Reset state on any error during mouse tracking
                         rolloverIndex = -1
                         cursor = Cursor.getDefaultCursor()
+                        System.err.println("Error in mouse motion tracking: ${e.message}")
                     }
                 }
             }
@@ -171,6 +173,7 @@ class RedactionKeywordsPanel(private val config: McpConfig) : JPanel() {
                                     removeKeyword(selectedIndex, listModel)
                                     e.consume()
                                 } catch (ex: Exception) {
+                                    System.err.println("Error removing keyword: ${ex.message}")
                                     ex.printStackTrace()
                                 }
                             }
