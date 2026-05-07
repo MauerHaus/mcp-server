@@ -3,6 +3,7 @@ package net.portswigger.mcp.tools
 import burp.api.montoya.MontoyaApi
 import burp.api.montoya.burpsuite.TaskExecutionEngine.TaskExecutionEngineState.PAUSED
 import burp.api.montoya.burpsuite.TaskExecutionEngine.TaskExecutionEngineState.RUNNING
+import burp.api.montoya.collaborator.InteractionFilter
 import burp.api.montoya.core.BurpSuiteEdition
 import burp.api.montoya.http.HttpMode
 import burp.api.montoya.http.HttpService
@@ -206,6 +207,47 @@ fun Server.registerTools(api: MontoyaApi, config: McpConfig) {
             val redactionContext = if (config.redactHistory) redactionManager.createContext() else null
             val customKeywords = config.getCustomRedactionKeywordsList()
             api.siteMap().issues().asSequence().map { Json.encodeToString(it.toSerializableForm(redactionContext, customKeywords)) }
+        }
+
+        val collaboratorClient by lazy { api.collaborator().createClient() }
+
+        mcpTool<GenerateCollaboratorPayload>(
+            "Generates a Burp Collaborator payload URL for out-of-band (OOB) testing. " +
+            "Inject this payload into requests to detect server-side interactions (DNS lookups, HTTP requests, SMTP). " +
+            "Use get_collaborator_interactions with the returned payloadId to check for interactions."
+        ) {
+            api.logging().logToOutput("MCP generating Collaborator payload${customData?.let { " with custom data" } ?: ""}")
+
+            val payload = if (customData != null) {
+                collaboratorClient.generatePayload(customData)
+            } else {
+                collaboratorClient.generatePayload()
+            }
+
+            val server = collaboratorClient.server()
+            "Payload: $payload\nPayload ID: ${payload.id()}\nCollaborator server: ${server.address()}"
+        }
+
+        mcpTool<GetCollaboratorInteractions>(
+            "Polls Burp Collaborator for out-of-band interactions (DNS, HTTP, SMTP). " +
+            "Optionally filter by payloadId from generate_collaborator_payload. " +
+            "Returns interaction details including type, timestamp, client IP, and protocol-specific data."
+        ) {
+            api.logging().logToOutput("MCP polling Collaborator interactions${payloadId?.let { " for payload: $it" } ?: ""}")
+
+            val interactions = if (payloadId != null) {
+                collaboratorClient.getInteractions(InteractionFilter.interactionIdFilter(payloadId))
+            } else {
+                collaboratorClient.getAllInteractions()
+            }
+
+            if (interactions.isEmpty()) {
+                "No interactions detected"
+            } else {
+                interactions.joinToString("\n\n") {
+                    Json.encodeToString(it.toSerializableForm())
+                }
+            }
         }
     }
 
@@ -505,6 +547,18 @@ data class GetProxyWebsocketHistory(override val count: Int, override val offset
 data class GetProxyWebsocketHistoryRegex(val regex: String, override val count: Int, override val offset: Int) :
     Paginated
 
+// ✅ From upstream/main
+@Serializable
+data class GenerateCollaboratorPayload(
+    val customData: String? = null
+)
+
+@Serializable
+data class GetCollaboratorInteractions(
+    val payloadId: String? = null
+)
+
+// ✅ From HEAD (your redaction feature)
 @Serializable
 data class SendHttp1RequestRedacted(
     val content: String,

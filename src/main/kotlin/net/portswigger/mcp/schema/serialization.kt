@@ -1,5 +1,6 @@
 package net.portswigger.mcp.schema
 
+import burp.api.montoya.collaborator.Interaction as CollaboratorInteraction
 import burp.api.montoya.proxy.ProxyHttpRequestResponse
 import burp.api.montoya.proxy.ProxyWebSocketMessage
 import burp.api.montoya.scanner.audit.issues.AuditIssue
@@ -41,19 +42,19 @@ fun AuditIssue.toSerializableForm(redactionContext: RedactionContext? = null, cu
 fun burp.api.montoya.http.message.HttpRequestResponse.toSerializableForm(redactionContext: RedactionContext? = null, customKeywords: List<String> = emptyList()): HttpRequestResponse {
     val rawRequest = request()?.toString() ?: "<no request>"
     val rawResponse = response()?.toString() ?: "<no response>"
-    
+
     val processedRequest = if (redactionContext != null && rawRequest != "<no request>") {
         RedactionUtils.redactHttpRequest(rawRequest, redactionContext, customKeywords)
     } else {
         rawRequest
     }
-    
+
     val processedResponse = if (redactionContext != null && rawResponse != "<no response>") {
         RedactionUtils.redactHttpResponse(rawResponse, redactionContext, customKeywords)
     } else {
         rawResponse
     }
-    
+
     return HttpRequestResponse(
         request = processedRequest,
         response = processedResponse,
@@ -65,19 +66,19 @@ fun burp.api.montoya.http.message.HttpRequestResponse.toSerializableForm(redacti
 fun ProxyHttpRequestResponse.toSerializableForm(redactionContext: RedactionContext? = null, customKeywords: List<String> = emptyList()): HttpRequestResponse {
     val rawRequest = request()?.toString() ?: "<no request>"
     val rawResponse = response()?.toString() ?: "<no response>"
-    
+
     val processedRequest = if (redactionContext != null && rawRequest != "<no request>") {
         RedactionUtils.redactHttpRequest(rawRequest, redactionContext, customKeywords)
     } else {
         rawRequest
     }
-    
+
     val processedResponse = if (redactionContext != null && rawResponse != "<no response>") {
         RedactionUtils.redactHttpResponse(rawResponse, redactionContext, customKeywords)
     } else {
         rawResponse
     }
-    
+
     return HttpRequestResponse(
         request = processedRequest,
         response = processedResponse,
@@ -88,13 +89,13 @@ fun ProxyHttpRequestResponse.toSerializableForm(redactionContext: RedactionConte
 
 fun ProxyWebSocketMessage.toSerializableForm(redactionContext: RedactionContext? = null, customKeywords: List<String> = emptyList()): WebSocketMessage {
     val rawPayload = payload()?.toString() ?: "<no payload>"
-    
+
     val processedPayload = if (redactionContext != null && rawPayload != "<no payload>") {
         RedactionUtils.redactWebSocketPayload(rawPayload, redactionContext, customKeywords)
     } else {
         rawPayload
     }
-    
+
     return WebSocketMessage(
         payload = processedPayload,
         direction =
@@ -104,6 +105,33 @@ fun ProxyWebSocketMessage.toSerializableForm(redactionContext: RedactionContext?
                 WebSocketMessageDirection.SERVER_TO_CLIENT,
         notes = annotations().notes(),
         contextId = redactionContext?.contextId
+    )
+}
+
+fun CollaboratorInteraction.toSerializableForm(): CollaboratorInteractionDetails {
+    return CollaboratorInteractionDetails(
+        id = id().toString(),
+        type = type().name,
+        timestamp = timeStamp().toString(),
+        clientIp = clientIp().hostAddress,
+        clientPort = clientPort(),
+        customData = customData().orElse(null),
+        dnsDetails = dnsDetails().orElse(null)?.let {
+            CollaboratorDnsDetails(queryType = it.queryType().name)
+        },
+        httpDetails = httpDetails().orElse(null)?.let {
+            CollaboratorHttpDetails(
+                protocol = it.protocol().name,
+                request = it.requestResponse()?.request()?.toString(),
+                response = it.requestResponse()?.response()?.toString()
+            )
+        },
+        smtpDetails = smtpDetails().orElse(null)?.let {
+            CollaboratorSmtpDetails(
+                protocol = it.protocol().name,
+                conversation = it.conversation()
+            )
+        }
     )
 }
 
@@ -167,17 +195,48 @@ data class AuditIssueDefinition(
     val typeIndex: Int
 )
 
-
 @Serializable
 enum class WebSocketMessageDirection {
     CLIENT_TO_SERVER,
     SERVER_TO_CLIENT
 }
 
+// ✅ YOUR contextId field kept + upstream closing paren fixed
 @Serializable
 data class WebSocketMessage(
     val payload: String?,
     val direction: WebSocketMessageDirection,
     val notes: String?,
     val contextId: String? = null
+)
+
+@Serializable
+data class CollaboratorInteractionDetails(
+    val id: String,
+    val type: String,
+    val timestamp: String,
+    val clientIp: String,
+    val clientPort: Int,
+    val customData: String?,
+    val dnsDetails: CollaboratorDnsDetails?,
+    val httpDetails: CollaboratorHttpDetails?,
+    val smtpDetails: CollaboratorSmtpDetails?
+)
+
+@Serializable
+data class CollaboratorDnsDetails(
+    val queryType: String
+)
+
+@Serializable
+data class CollaboratorHttpDetails(
+    val protocol: String,
+    val request: String?,
+    val response: String?
+)
+
+@Serializable
+data class CollaboratorSmtpDetails(
+    val protocol: String,
+    val conversation: String
 )
